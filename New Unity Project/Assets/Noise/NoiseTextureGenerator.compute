@@ -1,0 +1,843 @@
+﻿// shadertype=<type>
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+#pragma kernel CSSecond
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> Result;  
+//RWFloat
+float frequency;
+float amplitude;
+
+StructuredBuffer<float3> worldPositions;
+
+float fract(float v)
+{
+    return v - floor(v);
+}
+
+float fract(float4 v)
+{
+    return (float) (v - floor(v));
+}
+
+
+float3 fract(float3 v)
+{
+    return (float) (v - floor(v));
+}
+float hash(float n)
+{
+    return fract(cos(n) * 41415.92653);
+}
+float rand_1_05(in float2 uv)
+{
+	float2 noise = (frac(sin(dot(uv, float2(12.9898, 78.233) * 2.0)) * 43758.5453));
+	return abs(noise.x + noise.y) * 0.5;
+}
+
+float2 rand_2_10(in float2 uv)
+{
+	float noiseX = (frac(sin(dot(uv, float2(12.9898, 78.233) * 2.0)) * 43758.5453));
+	float noiseY = sqrt(1 - noiseX * noiseX);
+	return float2(noiseX, noiseY);
+}
+
+float2 rand_2_0004(in float2 uv)
+{
+	float noiseX = (frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453));
+	float noiseY = (frac(sin(dot(uv, float2(12.9898, 78.233) * 2.0)) * 43758.5453));
+	return float2(noiseX, noiseY) * 0.004;
+}
+
+
+#define NOISE_SIMPLEX_1_DIV_289 0.00346020761245674740484429065744f
+
+float mod289(float x)
+{
+    return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+
+float2 mod289(float2 x)
+{
+    return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+
+float3 mod289(float3 x)
+{
+    return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+
+float4 mod289(float4 x)
+{
+    return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+
+// ( x*34.0 + 1.0 )*x = 
+// x*x*34.0 + x
+float permute(float x)
+{
+    return mod289(
+		x * x * 34.0 + x
+	);
+}
+
+float3 permute(float3 x)
+{
+    return mod289(
+		x * x * 34.0 + x
+	);
+}
+
+float4 permute(float4 x)
+{
+    return mod289(
+		x * x * 34.0 + x
+	);
+}
+
+
+float taylorInvSqrt(float r)
+{
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float4 taylorInvSqrt(float4 r)
+{
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float4 grad4(float j, float4 ip)
+{
+    const float4 ones = float4(1.0, 1.0, 1.0, -1.0);
+    float4 p, s;
+    p.xyz = floor(frac(j * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+	
+	// GLSL: lessThan(x, y) = x < y
+	// HLSL: 1 - step(y, x) = x < y
+    s = float4(
+		1 - step(0.0, p)
+	);
+    p.xyz = p.xyz + (s.xyz * 2 - 1) * s.www;
+	
+    return p;
+}
+
+
+// ----------------------------------- 2D -------------------------------------
+
+float snoise(float2 v)
+{
+    const float4 C = float4(
+		0.211324865405187, // (3.0-sqrt(3.0))/6.0
+		0.366025403784439, // 0.5*(sqrt(3.0)-1.0)
+	 -0.577350269189626, // -1.0 + 2.0 * C.x
+		0.024390243902439 // 1.0 / 41.0
+	);
+	
+// First corner
+    float2 i = floor(v + dot(v, C.yy));
+    float2 x0 = v - i + dot(i, C.xx);
+	
+// Other corners
+	// float2 i1 = (x0.x > x0.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+	// Lex-DRL: afaik, step() in GPU is faster than if(), so:
+	// step(x, y) = x <= y
+    int xLessEqual = step(x0.x, x0.y); // x <= y ?
+    int2 i1 =
+		int2(1, 0) * (1 - xLessEqual) // x > y
+		+ int2(0, 1) * xLessEqual // x <= y
+    ;
+    float4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+	
+// Permutations
+    i = mod289(i); // Avoid truncation effects in permutation
+    float3 p = permute(
+		permute(
+				i.y + float3(0.0, i1.y, 1.0)
+		) + i.x + float3(0.0, i1.x, 1.0)
+	);
+	
+    float3 m = max(
+		0.5 - float3(
+			dot(x0, x0),
+			dot(x12.xy, x12.xy),
+			dot(x12.zw, x12.zw)
+		),
+		0.0
+	);
+    m = m * m;
+    m = m * m;
+	
+// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+	
+    float3 x = 2.0 * frac(p * C.www) - 1.0;
+    float3 h = abs(x) - 0.5;
+    float3 ox = floor(x + 0.5);
+    float3 a0 = x - ox;
+
+// Normalise gradients implicitly by scaling m
+// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+
+// Compute final noise value at P
+    float3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+}
+// ----------------------------------- 3D -------------------------------------
+
+static float3 grad3lut[16] =
+{
+    { 1.0f, 0.0f, 1.0f },
+    { 0.0f, 1.0f, 1.0f },
+    { -1.0f, 0.0f, 1.0f },
+    { 0.0f, -1.0f, 1.0f },
+    { 1.0f, 0.0f, -1.0f },
+    { 0.0f, 1.0f, -1.0f },
+    { -1.0f, 0.0f, -1.0f },
+    { 0.0f, -1.0f, -1.0f },
+    { 1.0f, -1.0f, 0.0f },
+    { 1.0f, 1.0f, 0.0f },
+    { -1.0f, 1.0f, 0.0f },
+    { -1.0f, -1.0f, 0.0f },
+    { 1.0f, 0.0f, 1.0f },
+    { -1.0f, 0.0f, 1.0f },
+    { 0.0f, 1.0f, -1.0f },
+    { 0.0f, -1.0f, -1.0f }
+};
+ 
+float3 grad3(int hash)
+{
+    return grad3lut[hash & 15];
+}
+     
+float simplexNoise(float3 input)
+{
+    float n0, n1, n2, n3;
+    float noise;
+    float3 g0, g1, g2, g3;
+ 
+    float s = (input.x + input.y + input.z) * 0.333333333;
+    float3 a = input + s;
+    int3 ijk = floor(a);
+ 
+    float t = (float) (ijk.x + ijk.y + ijk.z) * 0.166666667;
+    float3 b = ijk - t;
+    float3 c = input - b;
+ 
+    int3 ijk1;
+    int3 ijk2;
+   
+    if (c.x >= c.y)
+    {
+        if (c.y >= c.z)
+        {
+            ijk1 = int3(1, 0, 0);
+            ijk2 = int3(1, 1, 0);
+        }
+        else if (c.x >= c.z)
+        {
+            ijk1 = int3(1, 0, 0);
+            ijk2 = int3(1, 0, 1);
+        }
+        else
+        {
+            ijk1 = int3(0, 0, 1);
+            ijk2 = int3(1, 0, 1);
+        }
+    }
+    else
+    {
+        if (c.y < c.z)
+        {
+            ijk1 = int3(0, 0, 1);
+            ijk2 = int3(0, 1, 1);
+        }
+        else if (c.x < c.z)
+        {
+            ijk1 = int3(0, 1, 0);
+            ijk2 = int3(0, 1, 1);
+        }
+        else
+        {
+            ijk1 = int3(0, 1, 0);
+            ijk2 = int3(1, 1, 0);
+        }
+    }
+ 
+    float3 c1 = c - ijk1 + 0.166666667;
+    float3 c2 = c - ijk2 + 2.0f * 0.166666667;
+    float3 c3 = c - 1.0f + 3.0f * 0.166666667;
+ 
+    int ii = ijk.x & 0xff;
+    int jj = ijk.y & 0xff;
+    int kk = ijk.z & 0xff;
+ 
+    float t0 = 0.6f - c.x * c.x - c.y * c.y - c.z * c.z;
+    float t20, t40;
+    if (t0 < 0.0f)
+        n0 = t0 = t20 = t40 = g0.x = g0.y = g0.z = 0.0f;
+    else
+    {
+        g0 = grad3(hash(ii + hash(jj + hash(kk))));
+        t20 = t0 * t0;
+        t40 = t20 * t20;
+        n0 = t40 * (g0.x * c.x + g0.y * c.y + g0.z * c.z);
+    }
+ 
+    float t1 = 0.6f - c1.x * c1.x - c1.y * c1.y - c1.z * c1.z;
+    float t21, t41;
+    if (t1 < 0.0f)
+        n1 = t1 = t21 = t41 = g1.x = g1.y = g1.z = 0.0f;
+    else
+    {
+        g1 = grad3(hash(ii + ijk1.x + hash(jj + ijk1.y + hash(kk + ijk1.z))));
+        t21 = t1 * t1;
+        t41 = t21 * t21;
+        n1 = t41 * (g1.x * c1.x + g1.y * c1.y + g1.z * c1.z);
+    }
+ 
+    float t2 = 0.6f - c2.x * c2.x - c2.y * c2.y - c2.z * c2.z;
+    float t22, t42;
+    if (t2 < 0.0f)
+        n2 = t2 = t22 = t42 = g2.x = g2.y = g2.z = 0.0f;
+    else
+    {
+        g2 = grad3(hash(ii + ijk2.x + hash(jj + ijk2.y + hash(kk + ijk2.z))));
+        t22 = t2 * t2;
+        t42 = t22 * t22;
+        n2 = t42 * (g2.x * c2.x + g2.y * c2.y + g2.z * c2.z);
+    }
+ 
+    float t3 = 0.6f - c3.x * c3.x - c3.y * c3.y - c3.z * c3.z;
+    float t23, t43;
+    if (t3 < 0.0f)
+        n3 = t3 = t23 = t43 = g3.x = g3.y = g3.z = 0.0f;
+    else
+    {
+        g3 = grad3(hash(ii + 1 + hash(jj + 1 + hash(kk + 1))));
+        t23 = t3 * t3;
+        t43 = t23 * t23;
+        n3 = t43 * (g3.x * c3.x + g3.y * c3.y + g3.z * c3.z);
+    }
+ 
+    noise = 20.0f * (n0 + n1 + n2 + n3);
+    return noise;
+}
+   
+float simplexNoise(float3 input, out float3 derivative)
+{
+    float n0, n1, n2, n3;
+    float noise;
+    float3 g0, g1, g2, g3;
+ 
+    float s = (input.x + input.y + input.z) * 0.333333333;
+    float3 a = input + s;
+    int3 ijk = floor(a);
+ 
+    float t = (float) (ijk.x + ijk.y + ijk.z) * 0.166666667;
+    float3 b = ijk - t;
+    float3 c = input - b;
+ 
+    int3 ijk1;
+    int3 ijk2;
+   
+    if (c.x >= c.y)
+    {
+        if (c.y >= c.z)
+        {
+            ijk1 = int3(1, 0, 0);
+            ijk2 = int3(1, 1, 0);
+        }
+        else if (c.x >= c.z)
+        {
+            ijk1 = int3(1, 0, 0);
+            ijk2 = int3(1, 0, 1);
+        }
+        else
+        {
+            ijk1 = int3(0, 0, 1);
+            ijk2 = int3(1, 0, 1);
+        }
+    }
+    else
+    {
+        if (c.y < c.z)
+        {
+            ijk1 = int3(0, 0, 1);
+            ijk2 = int3(0, 1, 1);
+        }
+        else if (c.x < c.z)
+        {
+            ijk1 = int3(0, 1, 0);
+            ijk2 = int3(0, 1, 1);
+        }
+        else
+        {
+            ijk1 = int3(0, 1, 0);
+            ijk2 = int3(1, 1, 0);
+        }
+    }
+ 
+    float3 c1 = c - ijk1 + 0.166666667;
+    float3 c2 = c - ijk2 + 2.0f * 0.166666667;
+    float3 c3 = c - 1.0f + 3.0f * 0.166666667;
+ 
+    int ii = ijk.x & 0xff;
+    int jj = ijk.y & 0xff;
+    int kk = ijk.z & 0xff;
+ 
+    float t0 = 0.6f - c.x * c.x - c.y * c.y - c.z * c.z;
+    float t20, t40;
+    if (t0 < 0.0f)
+        n0 = t0 = t20 = t40 = g0.x = g0.y = g0.z = 0.0f;
+    else
+    {
+        g0 = grad3(hash(ii + hash(jj + hash(kk))));
+        t20 = t0 * t0;
+        t40 = t20 * t20;
+        n0 = t40 * (g0.x * c.x + g0.y * c.y + g0.z * c.z);
+    }
+ 
+    float t1 = 0.6f - c1.x * c1.x - c1.y * c1.y - c1.z * c1.z;
+    float t21, t41;
+    if (t1 < 0.0f)
+        n1 = t1 = t21 = t41 = g1.x = g1.y = g1.z = 0.0f;
+    else
+    {
+        g1 = grad3(hash(ii + ijk1.x + hash(jj + ijk1.y + hash(kk + ijk1.z))));
+        t21 = t1 * t1;
+        t41 = t21 * t21;
+        n1 = t41 * (g1.x * c1.x + g1.y * c1.y + g1.z * c1.z);
+    }
+ 
+    float t2 = 0.6f - c2.x * c2.x - c2.y * c2.y - c2.z * c2.z;
+    float t22, t42;
+    if (t2 < 0.0f)
+        n2 = t2 = t22 = t42 = g2.x = g2.y = g2.z = 0.0f;
+    else
+    {
+        g2 = grad3(hash(ii + ijk2.x + hash(jj + ijk2.y + hash(kk + ijk2.z))));
+        t22 = t2 * t2;
+        t42 = t22 * t22;
+        n2 = t42 * (g2.x * c2.x + g2.y * c2.y + g2.z * c2.z);
+    }
+ 
+    float t3 = 0.6f - c3.x * c3.x - c3.y * c3.y - c3.z * c3.z;
+    float t23, t43;
+    if (t3 < 0.0f)
+        n3 = t3 = t23 = t43 = g3.x = g3.y = g3.z = 0.0f;
+    else
+    {
+        g3 = grad3(hash(ii + 1 + hash(jj + 1 + hash(kk + 1))));
+        t23 = t3 * t3;
+        t43 = t23 * t23;
+        n3 = t43 * (g3.x * c3.x + g3.y * c3.y + g3.z * c3.z);
+    }
+ 
+    noise = 20.0f * (n0 + n1 + n2 + n3);
+ 
+    float temp0 = t20 * t0 * (g0.x * c.x + g0.y * c.y + g0.z * c.z);
+    derivative = temp0 * c;
+    float temp1 = t21 * t1 * (g1.x * c1.x + g1.y * c1.y + g1.z * c1.z);
+    derivative += temp1 * c1;
+    float temp2 = t22 * t2 * (g2.x * c2.x + g2.y * c2.y + g2.z * c2.z);
+    derivative += temp2 * c2;
+    float temp3 = t23 * t3 * (g3.x * c3.x + g3.y * c3.y + g3.z * c3.z);
+    derivative += temp3 * c3;
+    derivative *= -8.0f;
+    derivative += t40 * g0 + t41 * g1 + t42 * g2 + t43 * g3;
+    derivative *= 28.0f;
+ 
+    return noise;
+}
+
+
+float ValueNoise(float3 Point, int frequency)
+{
+
+	Point *= frequency;
+	int i = floor(Point.x);
+    //i &= 512;
+    return i & 1;
+}
+
+
+
+
+//	Classic Perlin 2D Noise 
+//	by Stefan Gustavson
+//
+float2 fade(float2 t)
+{
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+
+float3 lerp(float3 a, float3 b, float w)
+{
+    return a + w * (b - a);
+}
+
+float2 lerp(float2 a, float2 b, float w)
+{
+    return a + w * (b - a);
+}
+
+float lerp(float a, float b, float w)
+{
+    return a + w * (b - a);
+}
+float cnoise(float2 P)
+{
+    float4 Pi = floor(P.xyxy) + float4(0.0, 0.0, 1.0, 1.0);
+    float4 Pf = fract(P.xyxy) - float4(0.0, 0.0, 1.0, 1.0);
+    Pi = mod289(Pi); // To avoid truncation effects in permutation
+    float4 ix = Pi.xzxz;
+    float4 iy = Pi.yyww;
+    float4 fx = Pf.xzxz;
+    float4 fy = Pf.yyww;
+    float4 i = permute(permute(ix) + iy);
+    float4 gx = 2.0 * fract(i * 0.0243902439) - 1.0; // 1/41 = 0.024...
+    float4 gy = abs(gx) - 0.5;
+    float4 tx = floor(gx + 0.5);
+    gx = gx - tx;
+    float2 g00 = float2(gx.x, gy.x);
+    float2 g10 = float2(gx.y, gy.y);
+    float2 g01 = float2(gx.z, gy.z);
+    float2 g11 = float2(gx.w, gy.w);
+    float4 norm = 1.79284291400159 - 0.85373472095314 *
+    float4(dot(g00, g00), dot(g01, g01), dot(g10, g10), dot(g11, g11));
+    g00 *= norm.x;
+    g01 *= norm.y;
+    g10 *= norm.z;
+    g11 *= norm.w;
+    float n00 = dot(g00, float2(fx.x, fy.x));
+    float n10 = dot(g10, float2(fx.y, fy.y));
+    float n01 = dot(g01, float2(fx.z, fy.z));
+    float n11 = dot(g11, float2(fx.w, fy.w));
+    float2 fade_xy = fade(Pf.xy);
+    float2 n_x = lerp(float2(n00, n01), float2(n10, n11), fade_xy.x);
+    float n_xy = lerp(n_x.x, n_x.y, fade_xy.y);
+    return 2.3 * n_xy;
+}
+
+
+int perlinSeed = 42;
+uint octaves = 5;
+float lacunarity;
+float persistence;
+ float Smooth(float t)
+{
+    return t * t * t * (t * (t * 6 - 15) + 10);
+}
+float SmoothDerivative(float t)
+{
+    return 30 * t * t * (t * (t - 2) + 1);
+}
+
+float ValueNoise(float3 Point)
+{
+    Point *= frequency;
+    float ix0 = floor(Point.x);
+    float tx = fract(Point.x);
+
+
+    float iy0 = floor(Point.y);
+    float ty = fract(Point.y);
+
+    float ix1 = ix0 + 1;
+    float iy1 = iy0 + 1;
+    float h0 = hash(ix0);
+    float h1 = hash(ix1);
+
+    float h00 = hash(h0 + iy0);
+    float h01 = hash(h1 + iy0);
+
+    float h10 = hash(h0 + iy1);
+    float h11 = hash(h1 + iy1);
+    //i = i & 7;
+    //return i/7;
+    tx = Smooth(tx);
+    ty = Smooth(ty);
+
+    return lerp(lerp(h00, h01, tx), lerp(h10, h11, tx),ty); //; lerp(h10, h11, tx);
+    //hash(hash(ix) + iy);
+}
+
+float Dot(float2 g, float x, float y)
+{
+    return g.x * x + g.y * y;
+}
+
+
+
+float PartialDerivative(float x)
+{
+    return 30 * pow(x, 4) - 60 * pow(x, 3) + 30 * pow(x, 2);
+
+}
+
+float3 PerlinNoise(float2 Point, float frequency)
+{
+    float2 gradients2D[] =
+    {
+        
+    float2(1, 0),
+		
+    float2(-1, 0),
+		
+    float2(0, 1),
+		
+    float2(0, -1),
+		
+    normalize(float2(1, 1)),
+		
+    normalize(float2(-1, 1)),
+		
+    normalize(float2(1, -1)),
+		
+    normalize(float2(-1, -1))
+
+    };
+
+    uint gradientMask = 8;
+
+    Point *= frequency;
+    float ix0 = floor(Point.x);
+    //float tx = fract(Point.x);
+
+    float tx0 = fract(Point.x);
+    float tx1 = tx0 - 1;
+
+    float iy0 = floor(Point.y);
+    float ty0 = fract(Point.y);
+    float ty1 = ty0- 1;
+
+    float ix1 = ix0 + 1;
+    float iy1 = iy0 + 1;
+
+    float h0 = hash(ix0);
+    float h1 = hash(ix1);
+
+    //Retreiving Gradients
+    float2 g00 = gradients2D[(int) (hash(h0 + iy0) * 423) % gradientMask];
+    float2 g10 = gradients2D[(int) (hash(h1 + iy0) * 423) % gradientMask];
+
+    float2 g01 = gradients2D[(int) (hash(h0 + iy1) * 423) % gradientMask];
+    float2 g11 = gradients2D[(int) (hash(h1 + iy1) * 423) % gradientMask];
+    //i = i & 7;
+    //return i/7;
+    //Calulating value at points
+    float v00 = Dot(g00, tx0, ty0);
+    float v10 = Dot(g10, tx1, ty0);
+    float v01 = Dot(g01, tx0, ty1);
+    float v11 = Dot(g11, tx1, ty1);
+
+    float dtx = SmoothDerivative(tx0);
+    float dty = SmoothDerivative(ty0);
+
+    float tx = Smooth(tx0);
+    float ty = Smooth(ty0);
+
+    float a = v00;
+    float b = v10 - v00;
+    float c = v01 - v00;
+    float d = v11 - v01 - v10 + v00;
+
+    float2 da = g00;
+    float2 db = g10 - g00;
+    float2 dc = g01 - g00;
+    float2 dd = g11 - g01 - g10 + g00;
+//float2 d1 = float2((b + d * ty) * dtx, b * (c + d * tx) * dty) * frequency * (1 / gradientMask);;
+    float2 derivative;
+    derivative = da + db * tx + (dc + dd * tx) * ty;
+    derivative.x += (b + d * ty) * dtx;
+    derivative.y += (c + d * tx) * dty;
+    //derivative *= frequency;
+
+
+    float lerp0 = lerp(v00, v10, tx);
+    float lerp1 = lerp(v01, v11, tx);
+    float lerp3 = lerp(lerp0, lerp1, ty);
+
+    return float3((lerp3), derivative.x, derivative.y) * sqrt(2);
+}
+
+struct NoiseInfo
+{
+    int noiseType;
+    float frequency;
+    int octaves;
+    float lacunarity;
+    float persistence;
+    float amplitude;
+    float weight;
+};
+
+const float2x2 m = float2x2(0.8, -0.6, 0.6, 0.8);
+
+float3 Sum(float2 Point, NoiseInfo inf)
+{
+    float2x2 m = float2x2(1, 0,
+                          0, 1);
+
+    float3 sum = float3(0, 0, 0); //PerlinNoise(Point, inf.frequency);
+    float range = 1;
+    float tempfrequency = inf.frequency;
+    float tempOctaves = inf.octaves;
+    float2 derivativeSum = float2(0, 0);
+    //normalize(mul(m, (sum.yz)));
+
+    uint val = min(tempOctaves, 8);
+    for (uint o = 1; o < val; o++)
+    {
+        float3 noise = PerlinNoise(Point, tempfrequency);
+        float2 derivative =noise.yz;
+        derivativeSum += derivative;
+      
+        sum += (noise.x * inf.amplitude);
+        tempfrequency *= inf.lacunarity; /// (1 - dot(derivative, derivative));
+        inf.amplitude *= inf.persistence;
+        range = (range + inf.amplitude); /// (1 - dot(derivativeSum, derivativeSum));
+
+    }
+    return float3(sum.x * (1.0 / range), derivativeSum * (1.0 / range));
+}
+
+
+
+
+RWStructuredBuffer<NoiseInfo> noiseInfoBuffer;
+RWStructuredBuffer<float> SecondResult;
+//RWTexture1D<float> SecondResult;
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	uint xWidth = 0;
+	uint yWidth = 0;
+	Result.GetDimensions(xWidth, yWidth);
+
+	half3 point0 = lerp(worldPositions[0], worldPositions[1], (id.y + id.y) / (float) xWidth);
+	half3 point1 = lerp(worldPositions[2], worldPositions[3], (id.y + id.y) / (float) xWidth);
+
+	half3 Vector3point = lerp(point0, point1, (id.x + id.x) /(float) yWidth);
+	// TODO: insert actual code here!
+	//Result[id.xy] = float4(((id.x) / (float) id.y), ((id.y)/ (float) id.x), 0, 1);
+
+	//Shows UVs Tiled
+	
+	//Result[id.xy] = (float4((float(id.x + id.x) / xWidth % 0.1f), (float(id.y + id.y) / xWidth % 0.1f), 0, 1))*10;
+	
+	//Arrows
+	//Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+
+	//Formula Noise
+	//Result[id.xy] = float4(1, 1, 1, 1) * rand_1_05(Vector3point.xy);
+
+    //My Shitty noise
+	//Result[id.xy] = float4(1, 1, 1, 1) * Perlin(Vector3point, frequency);
+
+    //Hamstered simplex noise
+
+    Result[id.xy] = float4(1, 1, 1, 1) * snoise(Vector3point.xy * frequency); //* snoise(Vector3point.xy * noiseInf[0].frequency / 2);
+
+    //Result[id.xy] = float4(1, 1, 1, 1) * (1 - abs(snoise(Vector3point.xy * frequency))) * 0.5f + (snoise(Vector3point.xy * frequency)) * 0.5f; //* snoise(Vector3point.xy * noiseInf[0].frequency / 2);
+
+    //SecondResult[(((id.y / (float) xWidth) + id.x)*0.5f) + ((id.x / (float) xWidth) + id.y)* 0.5f] = Result[id.xy].r;
+    //SecondResult[id.x] = Result[id.xy].r;
+
+}
+
+
+//RWTexture2D<float> SecondResult;
+
+float Pattern(float2 p, NoiseInfo inf)
+{
+    float2 q = float2(Sum(p + float2(0.0, 0.0), inf).x, Sum(p + float2(5.2f, 1.3f), inf).x);
+
+    float2 r = float2(Sum(p + 4.0f * q + float2(1.7f, 9.2f), inf).x, Sum(p + 4.0f * q + float2(4.2f, 1.8f), inf).x);
+
+    return Sum(p + 4.0 * q,inf).x;
+}
+
+[numthreads(8, 8, 1)]
+void CSSecond(uint2 id : SV_DispatchThreadID)
+{
+    uint xWidth = 0;
+    uint yWidth = 0;
+    Result.GetDimensions(xWidth, yWidth);
+
+    half3 point0 = lerp(worldPositions[0], worldPositions[1], (id.y) / (float) xWidth);
+    half3 point1 = lerp(worldPositions[2], worldPositions[3], (id.y) / (float) xWidth);
+
+    half3 Vector3point = lerp(point0, point1, (id.x) / (float) yWidth);
+	// TODO: insert actual code here!
+	//Result[id.xy] = float4(((id.x) / (float) id.y), ((id.y)/ (float) id.x), 0, 1);
+    float4 noisefloat = float4(1,1,1,1);
+	//Shows UVs Tiled
+    uint numStructs;
+    uint stride;
+    float2 p = Vector3point.xy;
+    noiseInfoBuffer.GetDimensions(numStructs, stride); 
+    const float2x2 m = float2x2(0.8, -0.6, 0.6, 0.8);
+    for (uint i = 0; i < numStructs; i++)
+    {
+        switch (noiseInfoBuffer[i].noiseType)
+        {
+            case 0:
+                noisefloat += (Sum(p, noiseInfoBuffer[i]).x * 0.5 + 0.5) * (noiseInfoBuffer[i].weight) ;
+                break;
+            case 1:
+                noisefloat += (abs(Sum(p, noiseInfoBuffer[i]).x * 0.5 + 0.5) * (noiseInfoBuffer[i].weight));
+                break;
+            case 2:
+                noisefloat += (1 - ((abs(Sum(p, noiseInfoBuffer[i]).x) * 0.5 + 0.5))) * (noiseInfoBuffer[i].weight);
+                break;
+            case 3:
+                noisefloat += (Pattern(p, noiseInfoBuffer[i]).x * 0.5 + 0.5) * (noiseInfoBuffer[i].weight);
+                break;
+            case 4:
+                //float a = 0.0;
+                float b = 1.0;
+                float2 d = float2(0,0);
+                
+                for (int j = 0; j < 15; j++)
+                {
+                    float3 n = Sum(p, noiseInfoBuffer[i]);
+                    d += n.yz;
+                    noisefloat += b * n.x / (1.0 + dot(d, d));
+                    b *= 0.5;
+                    p = mul(m , p) * 2.0;
+                }
+                noisefloat = noisefloat *   0.5 + 0.5; //* noiseInfoBuffer[i].weight); //((noise.x / ((1 - Dot(deriv.xy, deriv.x, deriv.y) * 0.5f)) * (noiseInfoBuffer[i].weight)));
+                break;
+        }
+        p += noisefloat;
+      }
+
+
+
+    //Perlin Noise
+    //noisefloat += Sum(Vector3point.xy, frequency / 1.98f, octaves / 1.98f) * 0.50f;
+    //noisefloat += Sum(Vector3point.xy, frequency / 3.59f, octaves / 3.59f) * 0.75f;
+    
+    //noisefloat -= (1-abs(Sum(Vector3point.xy, 1,1))) * 0.50f;
+
+    Result[id.xy] = float4(noisefloat.x, noisefloat.x * ((noisefloat.y -     noisefloat.z) / 2), noisefloat.x * (noisefloat.y + noisefloat.z) / 2, 1) / numStructs;
+
+    //SecondResult[id.xy] = 1 * noisefloat / numStructs;
+
+    SecondResult[(id.x) + xWidth * id.y] = noisefloat / numStructs;
+}
+
+
+
+

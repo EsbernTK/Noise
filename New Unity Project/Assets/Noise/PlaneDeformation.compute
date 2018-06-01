@@ -1,0 +1,52 @@
+﻿#pragma kernel CSMain
+ 
+//We define the size of a group in the x and y directions, z direction will just be one
+#define thread_group_size_x 4
+#define thread_group_size_y 4
+ 
+ //A struct that simple holds a position
+struct PositionStruct
+{
+    float3 pos;
+};
+ 
+//A struct containing an offset for use by Wave function
+struct OffsetStruct
+{
+    float offset;
+};
+ 
+//A constant buffer struct that holds a time variable sent from Unity
+struct CBufferStruct
+{
+    float t;
+};
+ 
+//We keep three buffers accessed by the kernel, a constant buffer that is the same for every computation,
+//an offset buffer with a value to offset the wave, and an output buffer that is written to by the kernel
+RWStructuredBuffer<CBufferStruct> cBuffer;
+RWStructuredBuffer<float> noises;
+RWStructuredBuffer<PositionStruct> output;
+ 
+//A simple sine modulation of the z coordinate, with an offset by a random value between 0 and 2PI
+float3 Wave(float3 p, int idx)
+{
+    p.z = sin(cBuffer[0].t + noises[idx]);
+    return p;
+}
+ 
+//The kernel for this compute shader, each thread group contains a number of threads specified by numthreads(x,y,z)
+//We lookup the the index into the flat array by using x + y * x_stride
+//The position is calculated from the thread index and then the z component is shifted by the Wave function
+[numthreads(thread_group_size_x, thread_group_size_y, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    int idx = id.x + id.y * thread_group_size_x * 32;
+    float spacing = 0.5f;
+ 
+    float3 pos = float3(id.x * spacing, id.y * spacing + noises[(id.x) + 32 * id.y], id.z * spacing);
+ 
+    //pos = Wave(pos, idx);
+ 
+    output[idx].pos = pos;
+}

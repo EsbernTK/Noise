@@ -1,0 +1,81 @@
+// Super stupid box average filter. Groups of 8x8, store pixels in groupshared memory,
+// do parallel reduction to average them.
+
+// each #kernel tells which function to compile; you can have many kernels if you wish
+
+#pragma kernel Sponge
+
+
+
+static int indexOrder [36] = {1,0,3, 1,3,2, 2,3,4, 5,2,4, 5,6,2, 6,1,2, 3,0,7, 3,7,4, 1,7,0, 1,6,7, 6,5,7, 5,4,7};
+
+
+struct cube{
+	float3 verts[36];
+	float3 color;
+
+};
+
+AppendStructuredBuffer<cube> cubes;
+float iterations;
+
+static float3 cv[8] = {
+ float3(0,0,0),
+ float3(0,1,0),
+ float3(1,1,0),
+ float3(1,0,0),
+ float3(1,0,1),
+ float3(1,1,1),
+ float3(0,1,1),
+ float3(0,0,1)
+ };
+
+ static uint3 middles[8] = {
+	uint3( 1,1,0 ), 
+	uint3(1,1,1) ,
+	uint3(1,1,0) ,
+	uint3(1,2,1),
+	uint3( 2,1,1) ,
+	uint3(1,1,2) ,
+	uint3( 0,1,1) ,
+	uint3( 1,0,1)
+ };
+
+
+ bool isMiddle(uint3 id){
+	
+	for(int i = 0; i < 8; i ++){
+		if(all(id == middles[i]) )
+			return true;
+	
+	}
+	return false;
+	
+
+}
+
+
+[numthreads(3,3,3)]
+void Sponge( uint3 Gid : SV_GroupID, uint3 DTid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID, uint GI : SV_GroupIndex ){
+	
+	cube myCube; 
+	
+	float smallFactor = 3/(iterations *3);
+
+	myCube.color = DTid * smallFactor *0.3f;
+
+	if(isMiddle(GTid) )
+	for (int index = 0; index < 36; index ++)
+		myCube.verts[index] = float3(0,0,0);
+	
+	else
+	for ( int windex = 0; windex < 36; windex++){
+			float3 vert = cv[indexOrder[windex]];
+			myCube.verts[windex] = ( vert + GTid + (Gid*3) ) * smallFactor; 
+	}
+	cubes.Append(myCube);
+
+	
+
+
+}

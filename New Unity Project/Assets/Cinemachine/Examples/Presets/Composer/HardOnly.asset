@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -867238956, guid: 7c9da65c57324a64ca6cc78d5ecc736e, type: 3}
+  m_Name: HardOnly
+  m_EditorClassIdentifier: 
+  TrackedObjectOffset: {x: 0, y: 0, z: 0}
+  m_HorizontalSoftDampening: 10000
+  m_VerticalSoftDampening: 10000
+  m_SoftGuideScreenPercents: {x: .540000021, y: .550000012, z: .540000021, w: .550000012}
+  m_HardGuideScreenPercents: {x: .519999981, y: .560000002, z: .550000012, w: .529999971}
+  m_Dutch: 0
