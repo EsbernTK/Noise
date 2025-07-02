@@ -96,7 +96,7 @@ public class useSimpleComputeShader : MonoBehaviour
 
         material.SetPass(0);
         material.SetBuffer("buf_Points", outputBuffer);
-        Graphics.DrawProcedural(MeshTopology.Lines , VertCount);
+        Graphics.DrawProceduralNow(MeshTopology.Lines , VertCount);
     }
 
     //To setup a ComputeBuffer we pass in the array length, as well as the size in bytes of a single element.

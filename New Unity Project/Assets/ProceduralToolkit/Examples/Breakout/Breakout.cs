@@ -101,14 +101,14 @@ namespace ProceduralToolkit.Examples
             }
 
             // Ball should move with constant velocity
-            ballRigidbody.velocity = ballRigidbody.velocity.normalized*config.ballVelocityMagnitude;
+            ballRigidbody.linearVelocity = ballRigidbody.linearVelocity.normalized*config.ballVelocityMagnitude;
 
             if (ballTransform.position.y < -0.1f)
             {
                 ResetLevel();
             }
 
-            float angle = Vector2.Angle(ballRigidbody.velocity, Vector2.right);
+            float angle = Vector2.Angle(ballRigidbody.linearVelocity, Vector2.right);
             if (angle < 30 || angle > 150)
             {
                 // Prevent ball from bouncing between walls
@@ -297,7 +297,7 @@ namespace ProceduralToolkit.Examples
 
             ballTransform.position = Vector3.up;
             ballTransform.localScale = new Vector3(config.ballSize, config.ballSize);
-            ballRigidbody.velocity = Vector2.zero;
+            ballRigidbody.linearVelocity = Vector2.zero;
             KickBallInRandomDirection();
         }
 

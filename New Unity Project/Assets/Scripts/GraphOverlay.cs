@@ -197,7 +197,7 @@ public class GraphOverlay : MonoBehaviour
 		m_Texture.Apply();
 
 		if (vehicleBody)
-			m_SpeedText.text = string.Format("Speed: {0:0.00} m/s", vehicleBody.velocity.magnitude);
+			m_SpeedText.text = string.Format("Speed: {0:0.00} m/s", vehicleBody.linearVelocity.magnitude);
 	}
 
 	// Convert time-value to the pixel plot space.

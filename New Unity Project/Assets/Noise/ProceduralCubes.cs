@@ -83,7 +83,7 @@ public class ProceduralCubes : MonoBehaviour
     void OnPostRender()
     {
         mat.SetPass(0);
-        Graphics.DrawProcedural(MeshTopology.Triangles,  36, instances);
+        Graphics.DrawProceduralNow(MeshTopology.Triangles,  36, instances);
 
     }
 

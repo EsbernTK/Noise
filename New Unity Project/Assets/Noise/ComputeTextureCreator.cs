@@ -250,7 +250,7 @@ public class ComputeTextureCreator : MonoBehaviour {
         float x_01 = (float)x / (float)terrainData.alphamapWidth;
 
         // Sample the height at this location (note GetHeight expects int coordinates corresponding to locations in the heightmap array)
-        float height = terrainData.GetHeight(Mathf.RoundToInt(y_01 * terrainData.heightmapHeight), Mathf.RoundToInt(x_01 * terrainData.heightmapWidth));
+        float height = terrainData.GetHeight(Mathf.RoundToInt(y_01 * terrainData.heightmapResolution), Mathf.RoundToInt(x_01 * terrainData.heightmapResolution));
 
         // Calculate the normal of the terrain (note this is in normalised coordinates relative to the overall terrain dimensions)
         Vector3 normal = terrainData.GetInterpolatedNormal(y_01, x_01);
@@ -267,12 +267,12 @@ public class ComputeTextureCreator : MonoBehaviour {
         splatWeights[3] = 0.5f;
 
         // Texture[1] is stronger at lower altitudes
-        splatWeights[2] = Mathf.Clamp01((terrainData.heightmapHeight - height));
+        splatWeights[2] = Mathf.Clamp01((terrainData.heightmapResolution - height));
 
         // Texture[2] stronger on flatter terrain
         // Note "steepness" is unbounded, so we "normalise" it by dividing by the extent of heightmap height and scale factor
         // Subtract result from 1.0 to give greater weighting to flat surfaces
-        splatWeights[2] = 1.0f - Mathf.Clamp01(steepness * steepness / (terrainData.heightmapHeight / 5.0f));
+        splatWeights[2] = 1.0f - Mathf.Clamp01(steepness * steepness / (terrainData.heightmapResolution / 5.0f));
 
         // Texture[3] increases with height but only on surfaces facing positive Z axis 
         splatWeights[0] = height * Mathf.Clamp01(normal.z);
@@ -300,7 +300,7 @@ public class ComputeTextureCreator : MonoBehaviour {
                 float x_01 = (float)x / (float)terrainData.alphamapWidth;
 
                 // Sample the height at this location (note GetHeight expects int coordinates corresponding to locations in the heightmap array)
-                float height = terrainData.GetHeight(Mathf.RoundToInt(y_01 * terrainData.heightmapHeight), Mathf.RoundToInt(x_01 * terrainData.heightmapWidth));
+                float height = terrainData.GetHeight(Mathf.RoundToInt(y_01 * terrainData.heightmapResolution), Mathf.RoundToInt(x_01 * terrainData.heightmapResolution));
 
                 // Calculate the normal of the terrain (note this is in normalised coordinates relative to the overall terrain dimensions)
                 Vector3 normal = terrainData.GetInterpolatedNormal(y_01, x_01);
@@ -317,12 +317,12 @@ public class ComputeTextureCreator : MonoBehaviour {
                 splatWeights[0] = 0.5f;
 
                 // Texture[1] is stronger at lower altitudes
-                splatWeights[2] = Mathf.Clamp01((terrainData.heightmapHeight - height));
+                splatWeights[2] = Mathf.Clamp01((terrainData.heightmapResolution - height));
 
                 // Texture[2] stronger on flatter terrain
                 // Note "steepness" is unbounded, so we "normalise" it by dividing by the extent of heightmap height and scale factor
                 // Subtract result from 1.0 to give greater weighting to flat surfaces
-                splatWeights[2] = 1.0f - Mathf.Clamp01(steepness * steepness / (terrainData.heightmapHeight / 5.0f));
+                splatWeights[2] = 1.0f - Mathf.Clamp01(steepness * steepness / (terrainData.heightmapResolution / 5.0f));
 
                 // Texture[3] increases with height but only on surfaces facing positive Z axis 
                 splatWeights[3] = height * Mathf.Clamp01(normal.z);
@@ -351,7 +351,7 @@ public class ComputeTextureCreator : MonoBehaviour {
     {
         pointMaterial.SetPass(0);
         pointMaterial.SetVector("_worldPos", transform.position);
-        Graphics.DrawProcedural(MeshTopology.Points, resolution * resolution);
+        Graphics.DrawProceduralNow(MeshTopology.Points, resolution * resolution);
     }
 
 }

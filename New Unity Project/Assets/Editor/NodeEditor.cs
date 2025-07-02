@@ -25,6 +25,7 @@ public class NodeEditor : EditorWindow {
     void Awake()
     {
         pathName = pathName + saverName + ".asset";
+        Debug.Log("Loading asset at: " + pathName);
         try
         {
             saver = (WindowEditorNodeSaver)AssetDatabase.LoadAssetAtPath(pathName, typeof(WindowEditorNodeSaver));
@@ -148,9 +149,13 @@ public class NodeEditor : EditorWindow {
                 }
             }
         }
-        if(makeTransitionMode && selectedNode != null)
+        
+
+        scrollPos = GUI.BeginScrollView(new Rect(0, 0, position.width, position.height), scrollPos, new Rect(0, 0, 1000, 1000));
+
+        if (makeTransitionMode && selectedNode != null)
         {
-            Rect mouseRect = new Rect(mousePos.x, mousePos.y, 10, 10);
+            Rect mouseRect = new Rect(scrollPos.x + mousePos.x, scrollPos.y + mousePos.y, 10, 10);
             DrawNodeCurve(selectedNode.outputRect, mouseRect);
             Repaint();
         }
@@ -166,13 +171,16 @@ public class NodeEditor : EditorWindow {
             if(n != null)
                 n.DrawCurves();
         }
-        scrollPos = GUI.BeginScrollView(new Rect(0, 0, position.width, position.height), scrollPos, new Rect(0, 0, 1000, 1000));
         
         BeginWindows();
         for(int i = 0; i < nodes.Count; i++)
         {
-            
-            nodes[i].windowRect = GUILayout.Window(i, nodes[i].windowRect, DrawNodeWindow, nodes[i].windowTitle);
+            //Debug.Log("Drawing node: " + nodes[i].windowTitle + " at index: " + i + " with rect: " + nodes[i].windowRect);
+            Rect tempRect = GUILayout.Window(i, nodes[i].windowRect, DrawNodeWindow, nodes[i].windowTitle);
+            Rect nodeRect = nodes[i].windowRect;
+            nodeRect.x = tempRect.x;
+            nodeRect.y = tempRect.y;
+            nodes[i].windowRect = nodeRect;
             nodes[i].id = i;
         }
         EndWindows();
@@ -188,52 +196,33 @@ public class NodeEditor : EditorWindow {
     void ContextCallback(object obj)
     {
         string clb = obj.ToString();
+        if (saver == null)
+        {
+            Debug.LogError("saver is null");
+            return;
+        }
+
+        BaseNode noiseNode = null;
+
         if (clb.Equals("noiseNode"))
         {
-            NoiseNode noiseNode = new NoiseNode();
-            noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 150));
-            //noiseNode.myComputeTextureCreator = computeTextureCreator;
-            nodes.Add(noiseNode);
-            noiseNode.name = "zzz" + noiseNode.name + saver.assetAmount.ToString();
-            noiseNode.index = nodes.Count - 1;
-            saver.assetAmount += 1;
-            saver.nodes.Add(noiseNode);
-            AssetDatabase.AddObjectToAsset(noiseNode, pathName);
-            AssetDatabase.SaveAssets();
-            //AssetDatabase.ImportAsset(pathName);
+            noiseNode = ScriptableObject.CreateInstance<NoiseNode>();
+            //noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 150));
         }
         else if (clb.Equals("calculationNode"))
         {
-            CalculationNode noiseNode = new CalculationNode();
-            noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 150));
-            nodes.Add(noiseNode);
-            noiseNode.name = "zzz" + noiseNode.name + saver.assetAmount.ToString();
-            saver.assetAmount += 1;
-            saver.nodes.Add(noiseNode);
-            AssetDatabase.AddObjectToAsset(noiseNode, pathName);
-            AssetDatabase.SaveAssets();
+            noiseNode = ScriptableObject.CreateInstance<CalculationNode>();
+            //noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 150));
         }
         else if (clb.Equals("outputNode"))
         {
-            OutputNode noiseNode = new OutputNode();
-            noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 200));
-            nodes.Add(noiseNode);
-            noiseNode.name = "zzz" + noiseNode.name + saver.assetAmount.ToString();
-            saver.assetAmount += 1;
-            saver.nodes.Add(noiseNode);
-            AssetDatabase.AddObjectToAsset(noiseNode, pathName);
-            AssetDatabase.SaveAssets();
+            noiseNode = ScriptableObject.CreateInstance<OutputNode>();
+            //noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 200));
         }
         else if (clb.Equals("waveNode"))
         {
-            WaveNode noiseNode = new WaveNode();
-            noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 200));
-            nodes.Add(noiseNode);
-            noiseNode.name = "zzz" + noiseNode.name + saver.assetAmount.ToString();
-            saver.assetAmount += 1;
-            saver.nodes.Add(noiseNode);
-            AssetDatabase.AddObjectToAsset(noiseNode, pathName);
-            AssetDatabase.SaveAssets();
+            noiseNode = ScriptableObject.CreateInstance<WaveNode>();
+            //noiseNode.windowRect = new Rect(mousePos, new Vector2(200, 200));
         }
         else if (clb.Equals("makeTransition"))
         {
@@ -253,7 +242,7 @@ public class NodeEditor : EditorWindow {
             {
                 selectedNode = tempSelectedNode;
                 makeTransitionMode = true;
-                
+
             }
             AssetDatabase.SaveAssets();
         }
@@ -300,6 +289,21 @@ public class NodeEditor : EditorWindow {
                 //AssetDatabase.ImportAsset(pathName);
             }
         }
+
+
+
+        if(noiseNode != null)
+        {
+            nodes.Add(noiseNode);
+            noiseNode.name = "zzz" + noiseNode.name + saver.assetAmount.ToString();
+            noiseNode.index = nodes.Count - 1;
+            saver.assetAmount += 1;
+            saver.nodes.Add(noiseNode);
+            AssetDatabase.AddObjectToAsset(noiseNode, pathName);
+            AssetDatabase.SaveAssets();
+        }
+
+
     }
     public static void DrawNodeCurve(Rect start, Rect end)
     {
